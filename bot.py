@@ -1,6 +1,5 @@
 import os
 import requests
-import asyncio
 from datetime import datetime
 from telegram import Update
 from telegram.ext import (
@@ -14,9 +13,10 @@ from telegram.ext import (
 # قراءة المفاتيح من Environment Variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # رابط HTTPS الخاص بخدمة Render
 
-if not BOT_TOKEN or not OPENROUTER_KEY:
-    raise ValueError("❌ تأكد من إضافة BOT_TOKEN و OPENROUTER_KEY في Environment Variables.")
+if not BOT_TOKEN or not OPENROUTER_KEY or not WEBHOOK_URL:
+    raise ValueError("❌ تأكد من إضافة BOT_TOKEN و OPENROUTER_KEY و WEBHOOK_URL في Environment Variables.")
 
 # ------------------------
 # تسجيل المحادثات
@@ -69,31 +69,36 @@ async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         res.raise_for_status()
         data = res.json()
         reply_text = data.get("choices", [{}])[0].get("message", {}).get("content", "⚠️ لم أتمكن من الرد.")
-    except requests.exceptions.RequestException as e:
-        reply_text = f"⚠️ خطأ في الاتصال بالخادم: {e}"
     except Exception as e:
-        reply_text = f"⚠️ خطأ غير متوقع: {e}"
+        reply_text = f"⚠️ حدث خطأ: {e}"
+        print(reply_text)
 
     await update.message.reply_text(reply_text)
     log_message(user_name, user_message, reply_text)
     print(f"Sent reply: {reply_text}")
 
 # ------------------------
-# تشغيل البوت مع إعادة المحاولة عند Conflict
+# تشغيل البوت باستخدام Webhook
 # ------------------------
-async def run_bot():
+def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # إضافة أوامر
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+
+    # الرد على الرسائل النصية
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, ai_reply))
 
-    while True:
-        try:
-            print("✅ Bot started polling")
-            await app.run_polling()
-        except Exception as e:
-            print(f"⚠️ حدث خطأ أثناء Polling: {e}")
-            await asyncio.sleep(5)  # إعادة المحاولة بعد 5 ثواني
+    # Webhook setup
+    port = int(os.environ.get("PORT", 5000))
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        webhook_url=WEBHOOK_URL
+    )
+
+    print("✅ Bot running with Webhook")
 
 if __name__ == "__main__":
-    asyncio.run(run_bot())
+    main()
