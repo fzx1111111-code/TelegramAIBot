@@ -1,7 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import sys
 import logging
 import requests
+import asyncio
 from datetime import datetime
 from telegram import Update
 from telegram.ext import (
@@ -11,180 +15,169 @@ from telegram.ext import (
     ContextTypes,
     CommandHandler
 )
-from telegram.ext._updater import Updater
 
 # إعداد التسجيل
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    stream=sys.stdout
 )
 logger = logging.getLogger(__name__)
 
-# قراءة المفاتيح من Environment Variables
+# قراءة المتغيرات
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT = int(os.getenv("PORT", 8000))
 
-print(f"BOT_TOKEN exists: {bool(BOT_TOKEN)}")
-print(f"OPENROUTER_KEY exists: {bool(OPENROUTER_KEY)}")
-print(f"WEBHOOK_URL exists: {bool(WEBHOOK_URL)}")
+# فحص المتغيرات
+logger.info("🔍 فحص المتغيرات...")
+logger.info(f"BOT_TOKEN: {'✅ موجود' if BOT_TOKEN else '❌ مفقود'}")
+logger.info(f"OPENROUTER_KEY: {'✅ موجود' if OPENROUTER_KEY else '❌ مفقود'}")
+logger.info(f"WEBHOOK_URL: {'✅ موجود' if WEBHOOK_URL else '❌ مفقود'}")
+logger.info(f"PORT: {PORT}")
 
-if not BOT_TOKEN:
-    logger.error("❌ BOT_TOKEN غير موجود")
-    sys.exit(1)
-if not OPENROUTER_KEY:
-    logger.error("❌ OPENROUTER_KEY غير موجود")
-    sys.exit(1)
-if not WEBHOOK_URL:
-    logger.error("❌ WEBHOOK_URL غير موجود")
+if not all([BOT_TOKEN, OPENROUTER_KEY, WEBHOOK_URL]):
+    logger.error("❌ بعض المتغيرات مفقودة")
     sys.exit(1)
 
 # ------------------------
-# تسجيل المحادثات
-# ------------------------
-def log_message(user, message, reply):
-    try:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_entry = f"[{timestamp}] {user}: {message}\n[Bot]: {reply}\n\n"
-        print(log_entry)
-    except Exception as e:
-        logger.error(f"Error logging message: {e}")
-
-# ------------------------
-# أوامر /start و /help
+# المعالجات
 # ------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالج أمر /start"""
     try:
         await update.message.reply_text(
-            "مرحبًا بك في خدمة العملاء! 🛎\n"
-            "أرسل أي سؤال وسأرد عليك مباشرة.\n"
-            "استخدم /help لمعرفة المزيد."
+            "🤖 مرحبًا! أنا بوت خدمة العملاء\n"
+            "أرسل لي أي رسالة وسأرد عليك!\n"
+            "استخدم /help للمساعدة"
         )
-        logger.info("Start command executed successfully")
+        logger.info(f"Start command من المستخدم: {update.effective_user.first_name}")
     except Exception as e:
-        logger.error(f"Error in start command: {e}")
+        logger.error(f"خطأ في start: {e}")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالج أمر /help"""
     try:
         await update.message.reply_text(
-            "📌 تعليمات:\n"
-            "- أرسل أي استفسار، شكوى، أو اقتراح.\n"
-            "- سأرد عليك مباشرة باستخدام AI.\n"
-            "- سيتم تسجيل المحادثات لتحسين الخدمة."
+            "📋 الأوامر المتاحة:\n"
+            "/start - بدء المحادثة\n"
+            "/help - عرض المساعدة\n\n"
+            "💬 أرسل أي رسالة نصية وسأرد عليك باستخدام الذكاء الاصطناعي"
         )
-        logger.info("Help command executed successfully")
+        logger.info(f"Help command من المستخدم: {update.effective_user.first_name}")
     except Exception as e:
-        logger.error(f"Error in help command: {e}")
+        logger.error(f"خطأ في help: {e}")
 
-# ------------------------
-# الرد الذكي على الرسائل
-# ------------------------
-async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالج الرسائل النصية"""
     try:
         user_message = update.message.text
-        user_name = update.message.from_user.username or update.message.from_user.first_name or "Unknown"
+        user_name = update.effective_user.first_name or "مستخدم"
         
-        logger.info(f"Received message from {user_name}: {user_message}")
+        logger.info(f"📨 رسالة من {user_name}: {user_message[:50]}...")
         
-        # إرسال رسالة انتظار
-        waiting_message = await update.message.reply_text("⏳ جاري الرد...")
+        # رسالة انتظار
+        status_msg = await update.message.reply_text("⏳ جاري المعالجة...")
         
+        # استدعاء AI
+        ai_response = await get_ai_response(user_message)
+        
+        # حذف رسالة الانتظار وإرسال الرد
+        await status_msg.delete()
+        await update.message.reply_text(ai_response)
+        
+        logger.info(f"✅ تم الرد على {user_name}")
+        
+    except Exception as e:
+        logger.error(f"خطأ في معالجة الرسالة: {e}")
+        try:
+            await update.message.reply_text("❌ عذراً، حدث خطأ في المعالجة")
+        except:
+            pass
+
+async def get_ai_response(message: str) -> str:
+    """الحصول على رد من AI"""
+    try:
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {OPENROUTER_KEY}",
+            "Content-Type": "application/json",
             "HTTP-Referer": WEBHOOK_URL,
-            "X-Title": "Telegram Customer Service Bot",
-            "Content-Type": "application/json"
+            "X-Title": "Telegram Bot"
         }
         
         payload = {
             "model": "deepseek/deepseek-chat",
             "messages": [
-                {
-                    "role": "system", 
-                    "content": "أنت مساعد ذكي لخدمة العملاء. أجب باللغة العربية بشكل مهذب ومفيد."
-                },
-                {
-                    "role": "user", 
-                    "content": user_message
-                }
+                {"role": "system", "content": "أنت مساعد ذكي. أجب باللغة العربية بشكل مفيد ومهذب."},
+                {"role": "user", "content": message}
             ],
-            "max_tokens": 500,
+            "max_tokens": 300,
             "temperature": 0.7
         }
         
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            response.raise_for_status()
-            data = response.json()
+        # استخدام asyncio لعدم حجب التطبيق
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, 
+            lambda: requests.post(url, headers=headers, json=payload, timeout=30)
+        )
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        if "choices" in data and data["choices"]:
+            return data["choices"][0]["message"]["content"]
+        else:
+            return "⚠️ لم أتمكن من الرد، حاول مرة أخرى"
             
-            if "choices" in data and len(data["choices"]) > 0:
-                reply_text = data["choices"][0]["message"]["content"]
-            else:
-                reply_text = "⚠️ عذراً، لم أتمكن من الرد على استفسارك. يرجى المحاولة مرة أخرى."
-                
-        except requests.RequestException as e:
-            logger.error(f"API Request Error: {e}")
-            reply_text = "⚠️ عذراً، هناك مشكلة تقنية. يرجى المحاولة لاحقاً."
-        except Exception as e:
-            logger.error(f"Unexpected API Error: {e}")
-            reply_text = "⚠️ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى."
-        
-        # حذف رسالة الانتظار وإرسال الرد
-        await waiting_message.delete()
-        await update.message.reply_text(reply_text)
-        
-        log_message(user_name, user_message, reply_text)
-        logger.info(f"Reply sent successfully to {user_name}")
-        
     except Exception as e:
-        logger.error(f"Error in ai_reply: {e}")
-        try:
-            await update.message.reply_text("⚠️ عذراً، حدث خطأ أثناء معالجة رسالتك.")
-        except:
-            pass
+        logger.error(f"خطأ في AI API: {e}")
+        return "⚠️ عذراً، هناك مشكلة مؤقتة في الخدمة"
 
-# ------------------------
-# معالجة الأخطاء العامة
-# ------------------------
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"Update {update} caused error {context.error}")
+    """معالج الأخطاء العام"""
+    logger.error(f"خطأ: {context.error}")
 
 # ------------------------
-# إعداد Webhook
+# الدالة الرئيسية
 # ------------------------
 def main():
+    """تشغيل البوت"""
     try:
         logger.info("🚀 بدء تشغيل البوت...")
         
         # إنشاء التطبيق
-        application = Application.builder().token(BOT_TOKEN).build()
+        app = Application.builder().token(BOT_TOKEN).build()
         
         # إضافة المعالجات
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, ai_reply))
-        application.add_error_handler(error_handler)
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("help", help_command))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        app.add_error_handler(error_handler)
         
-        # إعداد الـ webhook
-        port = int(os.environ.get("PORT", 8000))
+        logger.info(f"🌐 تشغيل الـ webhook على البورت {PORT}")
+        logger.info(f"🔗 رابط الـ webhook: {WEBHOOK_URL}")
         
-        logger.info(f"Starting server on port {port}")
-        logger.info(f"Webhook URL: {WEBHOOK_URL}")
-        
-        # تشغيل الخدمة
-        application.run_webhook(
+        # تشغيل الـ webhook
+        app.run_webhook(
             listen="0.0.0.0",
-            port=port,
+            port=PORT,
             url_path="",
             webhook_url=WEBHOOK_URL
         )
         
-        logger.info("✅ Bot is running with webhook!")
-        
     except Exception as e:
-        logger.error(f"❌ خطأ في تشغيل البوت: {e}")
+        logger.error(f"❌ فشل في تشغيل البوت: {e}")
         sys.exit(1)
 
+# نقطة البداية
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("⏹️ تم إيقاف البوت بواسطة المستخدم")
+    except Exception as e:
+        logger.error(f"💥 خطأ فادح: {e}")
+        sys.exit(1)
