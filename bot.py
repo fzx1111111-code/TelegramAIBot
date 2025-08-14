@@ -1,6 +1,7 @@
 import os
 import logging
 import requests
+import asyncio
 from datetime import datetime
 from telegram import Update
 from telegram.ext import (
@@ -168,14 +169,14 @@ def main() -> None:
         # إعداد الـ webhook
         logger.info(f"Setting webhook to: {WEBHOOK_URL}")
         
-        # التعديل الرئيسي هنا: استخدام طريقة مختلفة لتشغيل Webhook
-        await application.bot.set_webhook(url=f"{WEBHOOK_URL}")
-        
-        # تشغيل التطبيق
-        application.run_polling(
-            host='0.0.0.0',
+        # حل نهائي بدون استخدام await خارج async
+        application.run_webhook(
+            listen="0.0.0.0",
             port=PORT,
-            webhook_url=WEBHOOK_URL
+            webhook_url=WEBHOOK_URL,
+            url_path="",
+            cert=None,
+            key=None
         )
         
         logger.info("✅ Bot is running with webhook!")
