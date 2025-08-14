@@ -3,13 +3,12 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
-# قراءة المفاتيح من متغيرات البيئة
+# قراءة المفاتيح من Environment Variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
 
-# التحقق من وجود القيم
 if not BOT_TOKEN or not OPENROUTER_KEY:
-    raise ValueError("❌ تأكد من إضافة BOT_TOKEN و OPENROUTER_KEY في Environment Variables على Deta Space.")
+    raise ValueError("❌ تأكد من إضافة BOT_TOKEN و OPENROUTER_KEY في Environment Variables على Render.")
 
 async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """الرد على الرسائل النصية باستخدام OpenRouter API"""
@@ -18,7 +17,7 @@ async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_KEY}",
-        "HTTP-Referer": "https://example.com",  # يمكنك تغييره
+        "HTTP-Referer": "https://example.com",
         "X-Title": "Telegram AI Bot"
     }
     payload = {
