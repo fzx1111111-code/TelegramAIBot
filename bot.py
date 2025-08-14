@@ -1,7 +1,6 @@
 import os
 import logging
 import requests
-import asyncio
 from datetime import datetime
 from telegram import Update
 from telegram.ext import (
@@ -37,6 +36,8 @@ for name, value in required_vars.items():
         logger.error(f"❌ {name} غير موجود")
         exit(1)
 
+logger.info("✅ تم تحميل جميع متغيرات البيئة بنجاح")
+
 # ------------------------
 # تسجيل المحادثات
 # ------------------------
@@ -58,17 +59,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "أرسل أي سؤال وسأرد عليك مباشرة.\n"
             "استخدم /help لمعرفة المزيد."
         )
+        logger.info("تم تنفيذ أمر /start بنجاح")
     except Exception as e:
         logger.error(f"Error in start command: {e}")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text(
-            "📌 تعليمات:\n"
+            "📌 تعليمات الاستخدام:\n"
             "- أرسل أي استفسار، شكوى، أو اقتراح.\n"
             "- سأرد عليك مباشرة باستخدام الذكاء الاصطناعي.\n"
-            "- سيتم تسجيل المحادثات لتحسين الخدمة."
+            "- سيتم تسجيل المحادثات لتحسين الخدمة.\n\n"
+            "أوامر متاحة:\n"
+            "/start - بدء المحادثة\n"
+            "/help - عرض التعليمات"
         )
+        logger.info("تم تنفيذ أمر /help بنجاح")
     except Exception as e:
         logger.error(f"Error in help command: {e}")
 
@@ -81,12 +87,12 @@ async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.message.from_user
         user_name = user.username or user.first_name or "Unknown"
         
-        logger.info(f"Received message from {user_name}: {user_message}")
+        logger.info(f"📩 رسالة جديدة من {user_name}: {user_message}")
         
         # إرسال رسالة انتظار
-        waiting_message = await update.message.reply_text("⏳ جاري الرد...")
+        waiting_message = await update.message.reply_text("⏳ جاري معالجة طلبك...")
         
-        # إعداد طلب API
+        # إعداد طلب API لـ OpenRouter
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {OPENROUTER_KEY}",
@@ -100,55 +106,69 @@ async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "messages": [
                 {
                     "role": "system", 
-                    "content": "أنت مساعد ذكي لخدمة العملاء. أجب باللغة العربية بشكل مهذب ومفيد."
+                    "content": "أنت مساعد ذكي لخدمة العملاء في شركة تقنية. أجب باللغة العربية الفصحى بشكل مهذب ومفيد ودقيق. قدم معلومات مفيدة وحلول عملية للمستخدم."
                 },
                 {
                     "role": "user", 
                     "content": user_message
                 }
             ],
-            "max_tokens": 500,
+            "max_tokens": 700,
             "temperature": 0.7
         }
         
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            # إرسال الطلب إلى OpenRouter
+            response = requests.post(url, headers=headers, json=payload, timeout=45)
             response.raise_for_status()
             data = response.json()
             
+            # معالجة الرد
             if "choices" in data and len(data["choices"]) > 0:
                 reply_text = data["choices"][0]["message"]["content"]
             else:
-                reply_text = "⚠️ عذراً، لم أتمكن من الرد على استفسارك. يرجى المحاولة مرة أخرى."
+                reply_text = "⚠️ عذراً، لم أتمكن من معالجة طلبك. يرجى المحاولة مرة أخرى لاحقاً."
+                logger.warning("OpenRouter لم يرد برد صالح")
                 
+        except requests.Timeout:
+            logger.error("انتهت المهلة أثناء انتظار رد من OpenRouter")
+            reply_text = "⏱️ عذراً، استغرقت العملية وقتاً أطول من المتوقع. يرجى المحاولة مرة أخرى."
         except requests.RequestException as e:
-            logger.error(f"API Request Error: {e}")
-            reply_text = "⚠️ عذراً، هناك مشكلة تقنية. يرجى المحاولة لاحقاً."
+            logger.error(f"خطأ في طلب API: {str(e)}")
+            reply_text = "⚠️ عذراً، حدث خطأ تقني. يرجى المحاولة لاحقاً."
         except Exception as e:
-            logger.error(f"Unexpected API Error: {e}")
-            reply_text = "⚠️ حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى."
+            logger.error(f"خطأ غير متوقع في API: {str(e)}")
+            reply_text = "⚠️ حدث خطأ غير متوقع. يرجى إعادة المحاولة."
         
         # حذف رسالة الانتظار وإرسال الرد
         try:
             await waiting_message.delete()
         except Exception as e:
-            logger.warning(f"Couldn't delete waiting message: {e}")
+            logger.warning(f"تعذر حذف رسالة الانتظار: {str(e)}")
             
-        await update.message.reply_text(reply_text)
+        # إرسال الرد مع تقسيمه إذا كان طويلاً
+        max_length = 4096
+        if len(reply_text) > max_length:
+            for i in range(0, len(reply_text), max_length):
+                await update.message.reply_text(reply_text[i:i+max_length])
+        else:
+            await update.message.reply_text(reply_text)
+        
         log_message(user_name, user_message, reply_text)
+        logger.info(f"✅ تم إرسال الرد إلى {user_name}")
         
     except Exception as e:
-        logger.error(f"Error in ai_reply: {e}")
+        logger.error(f"خطأ في ai_reply: {str(e)}", exc_info=True)
         try:
-            await update.message.reply_text("⚠️ عذراً، حدث خطأ أثناء معالجة رسالتك.")
+            await update.message.reply_text("⚠️ عذراً، حدث خطأ غير متوقع أثناء معالجة رسالتك.")
         except Exception:
-            logger.error("Failed to send error message")
+            logger.error("فشل إرسال رسالة الخطأ")
 
 # ------------------------
 # معالجة الأخطاء العامة
 # ------------------------
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"Update {update} caused error: {context.error}", exc_info=context.error)
+    logger.error(f"حدث خطأ: {context.error}", exc_info=context.error)
 
 # ------------------------
 # الدالة الرئيسية
@@ -167,9 +187,9 @@ def main() -> None:
         application.add_error_handler(error_handler)
         
         # إعداد الـ webhook
-        logger.info(f"Setting webhook to: {WEBHOOK_URL}")
+        logger.info(f"🔄 جاري تعيين Webhook على: {WEBHOOK_URL}")
         
-        # حل نهائي بدون استخدام await خارج async
+        # استخدام run_webhook بشكل صحيح
         application.run_webhook(
             listen="0.0.0.0",
             port=PORT,
@@ -179,10 +199,10 @@ def main() -> None:
             key=None
         )
         
-        logger.info("✅ Bot is running with webhook!")
+        logger.info("✅ البوت يعمل بنجاح مع Webhook!")
         
     except Exception as e:
-        logger.error(f"❌ خطأ في تشغيل البوت: {e}")
+        logger.error(f"❌ فشل تشغيل البوت: {str(e)}", exc_info=True)
         exit(1)
 
 if __name__ == "__main__":
