@@ -167,13 +167,15 @@ def main() -> None:
         
         # إعداد الـ webhook
         logger.info(f"Setting webhook to: {WEBHOOK_URL}")
-        application.run_webhook(
-            listen="0.0.0.0",
+        
+        # التعديل الرئيسي هنا: استخدام طريقة مختلفة لتشغيل Webhook
+        await application.bot.set_webhook(url=f"{WEBHOOK_URL}")
+        
+        # تشغيل التطبيق
+        application.run_polling(
+            host='0.0.0.0',
             port=PORT,
-            webhook_url=WEBHOOK_URL,
-            cert=None,
-            key=None,
-            url_path=""
+            webhook_url=WEBHOOK_URL
         )
         
         logger.info("✅ Bot is running with webhook!")
