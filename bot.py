@@ -13,9 +13,10 @@ from telegram.ext import (
 # قراءة المفاتيح من Environment Variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # رابط الخدمة على Render
 
-if not BOT_TOKEN or not OPENROUTER_KEY:
-    raise ValueError("❌ تأكد من إضافة BOT_TOKEN و OPENROUTER_KEY في Environment Variables.")
+if not BOT_TOKEN or not OPENROUTER_KEY or not WEBHOOK_URL:
+    raise ValueError("❌ تأكد من إضافة BOT_TOKEN و OPENROUTER_KEY و WEBHOOK_URL في Environment Variables.")
 
 # ------------------------
 # تسجيل المحادثات
@@ -80,7 +81,7 @@ async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_message(user_name, user_message, reply_text)
 
 # ------------------------
-# تشغيل البوت
+# تشغيل البوت باستخدام Webhook
 # ------------------------
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -92,8 +93,14 @@ def main():
     # الرد على الرسائل النصية
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, ai_reply))
 
-    print("✅ Bot started polling")
-    app.run_polling()
+    # Webhook setup
+    port = int(os.environ.get("PORT", 5000))
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        webhook_url=WEBHOOK_URL
+    )
+    print("✅ Bot running with Webhook")
 
 if __name__ == "__main__":
     main()
