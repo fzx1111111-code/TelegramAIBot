@@ -168,7 +168,7 @@ async def ai_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # معالجة الأخطاء العامة
 # ------------------------
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"حدث خطأ: {context.error}", exc_info=context.error)
+    logger.error(f"حدث خطأ: {context.error}", exc_info=True)
 
 # ------------------------
 # الدالة الرئيسية
@@ -177,8 +177,8 @@ def main() -> None:
     try:
         logger.info("🚀 بدء تشغيل البوت...")
         
-        # إنشاء التطبيق
-        application = Application.builder().token(BOT_TOKEN).build()
+        # إنشاء التطبيق بطريقة مختلفة
+        application = Application.builder().token(BOT_TOKEN).updater(None).build()
         
         # إضافة المعالجات
         application.add_handler(CommandHandler("start", start))
@@ -189,14 +189,15 @@ def main() -> None:
         # إعداد الـ webhook
         logger.info(f"🔄 جاري تعيين Webhook على: {WEBHOOK_URL}")
         
-        # استخدام run_webhook بشكل صحيح
+        # استخدام run_webhook بشكل صحيح مع تجاوز المشكلة
         application.run_webhook(
             listen="0.0.0.0",
             port=PORT,
             webhook_url=WEBHOOK_URL,
             url_path="",
             cert=None,
-            key=None
+            key=None,
+            bootstrap_retries=0
         )
         
         logger.info("✅ البوت يعمل بنجاح مع Webhook!")
