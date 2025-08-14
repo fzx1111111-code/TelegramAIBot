@@ -1,17 +1,17 @@
 import os
 import sys
-import asyncio
 import logging
 import requests
 from datetime import datetime
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     MessageHandler,
     filters,
     ContextTypes,
     CommandHandler
 )
+from telegram.ext._updater import Updater
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -151,14 +151,14 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
 # ------------------------
-# تشغيل البوت باستخدام Webhook
+# إعداد Webhook
 # ------------------------
-async def main():
+def main():
     try:
         logger.info("🚀 بدء تشغيل البوت...")
         
-        # بناء التطبيق
-        application = ApplicationBuilder().token(BOT_TOKEN).build()
+        # إنشاء التطبيق
+        application = Application.builder().token(BOT_TOKEN).build()
         
         # إضافة المعالجات
         application.add_handler(CommandHandler("start", start))
@@ -168,34 +168,23 @@ async def main():
         
         # إعداد الـ webhook
         port = int(os.environ.get("PORT", 8000))
-        webhook_path = f"/webhook/{BOT_TOKEN}"
-        webhook_url = f"{WEBHOOK_URL.rstrip('/')}{webhook_path}"
         
-        logger.info(f"Webhook URL: {webhook_url}")
-        logger.info(f"Port: {port}")
+        logger.info(f"Starting server on port {port}")
+        logger.info(f"Webhook URL: {WEBHOOK_URL}")
         
-        # تشغيل الـ webhook
-        await application.bot.set_webhook(url=webhook_url)
-        logger.info("✅ Webhook تم إعداده بنجاح")
-        
-        # بدء الخدمة
-        await application.run_webhook(
+        # تشغيل الخدمة
+        application.run_webhook(
             listen="0.0.0.0",
             port=port,
-            url_path=webhook_path,
-            webhook_url=webhook_url
+            url_path="",
+            webhook_url=WEBHOOK_URL
         )
+        
+        logger.info("✅ Bot is running with webhook!")
         
     except Exception as e:
         logger.error(f"❌ خطأ في تشغيل البوت: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
-    try:
-        # تشغيل الحدث الرئيسي
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Fatal error: {e}")
-        sys.exit(1)
+    main()
